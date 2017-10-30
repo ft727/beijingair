@@ -1,0 +1,188 @@
+---
+title: "Beijing PM 2.5"
+author: "Albert Tsai"
+date: "10/29/2017"
+output: html_document
+---
+
+##Data import and preprocessing
+Beijing PM 2.5 data set, see description here: https://archive.ics.uci.edu/ml/datasets/Beijing+PM2.5+Data
+
+###Download to working directory
+This part of the script is pulling the data source from the original source and placing it in the working directory.
+```{r, message=FALSE, warning=FALSE}
+if(!file.exists('BeijingPM25.csv')){
+  rm(list = ls()) #Start by cleaning the environment.
+  url <- 'https://archive.ics.uci.edu/ml/machine-learning-databases/00381/PRSA_data_2010.1.1-2014.12.31.csv'
+  download.file(url, 'BeijingPM25.csv')
+  rm(url) #Clean up
+}
+```
+###Load into a data frame
+Load data from the file in the working directory in to a data frame.
+```{r, message=FALSE, warning=FALSE}
+library(readr)
+BeijingPM25 <- read_csv("BeijingPM25.csv")
+```
+
+###Remove NA values.
+PM2.5 and TEMP has some NA values, in order to make the analysis easier I have decided to remove those.
+```{r}
+BeijingPM25 <- subset(BeijingPM25, !is.na(pm2.5))
+BeijingPM25 <- subset(BeijingPM25, !is.na(TEMP))
+```
+
+###Check all the attributes
+
+
+*No: row number 
+*year: year of data in this row 
+*month: month of data in this row 
+*day: day of data in this row 
+*hour: hour of data in this row 
+*pm2.5: PM2.5 concentration (ug/m^3) 
+*DEWP: Dew Point (â„ƒ) 
+*TEMP: Temperature (â„ƒ) 
+*PRES: Pressure (hPa) 
+*cbwd: Combined wind direction 
+*Iws: Cumulated wind speed (m/s) 
+*Is: Cumulated hours of snow 
+*Ir: Cumulated hours of rain 
+
+###Review data from dataset
+
+```{r}
+summary(BeijingPM25)
+```
+
+
+###Create new fields
+1. Create an ordered factor for month in order to make more user friendly visualisations.
+```{r}
+BeijingPM25$Month_Desc <-factor(month.abb[BeijingPM25$month], ordered = TRUE, levels=c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))
+```
+
+2. Create a classification of airquality according to https://en.wikipedia.org/wiki/Air_quality_index
+```{r}
+BeijingPM25$AirQuality <- NA
+BeijingPM25$AirQuality[BeijingPM25$pm2.5 <= 50] <- 'Excellent'
+BeijingPM25$AirQuality[BeijingPM25$pm2.5 > 50 &  BeijingPM25$pm2.5 <= 100] <- 'Good'
+BeijingPM25$AirQuality[BeijingPM25$pm2.5 > 100 &  BeijingPM25$pm2.5 <= 150] <- 'Lightly Polluted'
+BeijingPM25$AirQuality[BeijingPM25$pm2.5 > 150 &  BeijingPM25$pm2.5 <= 200] <- 'Moderately Polluted'
+BeijingPM25$AirQuality[BeijingPM25$pm2.5 > 200 &  BeijingPM25$pm2.5 <= 300] <- 'Heavily Polluted'
+BeijingPM25$AirQuality[BeijingPM25$pm2.5 > 300] <- 'Severely Polluted'
+
+BeijingPM25$AirQuality <- factor(BeijingPM25$AirQuality, ordered = TRUE, levels = c('Excellent','Good', 'Lightly Polluted','Moderately Polluted','Heavily Polluted','Severely Polluted'))
+```
+
+3. Year Month
+```{r, message=FALSE, warning=FALSE}
+library(lubridate)
+BeijingPM25$YearMonth <- as.factor(make_date(BeijingPM25$year, month = BeijingPM25$month))
+```
+
+
+
+###Create subsets
+```{r}
+BeijingPM25_Winter <- subset(BeijingPM25, Month_Desc %in% c("Nov","Dec","Jan","Feb"))
+BeijingPM25_Jan <- subset(BeijingPM25, Month_Desc %in% c("Jan"))
+```
+
+###Create summaries
+1. The number of hours per month within the different air quality thresholds.
+```{r, message=FALSE, warning=FALSE}
+library(dplyr)
+
+BeijingPM25_YearMonth <- BeijingPM25_Winter %>%
+  group_by(YearMonth, AirQuality) %>%
+  summarise(count.hours = length(hour)
+  )
+```
+
+## (ii) Data exploratory analysis 
+
+###Seasons
+The winter seem to be the worst period in terms of air pollution in Beijing. We can se that the Dec-Feb are the worst months, those are also the peak winter months in Beijing. The month that seem to be by far the worst is January.
+
+```{r}
+library(ggplot2)
+ggplot(data = BeijingPM25, aes(y=pm2.5, x=Month_Desc)) + 
+ geom_jitter(aes(colour = TEMP)) + labs(title = "PM 2.5 and its relation to season", x="Month", y="PM 2.5", caption="(Scope: 2010-2014)")+theme_classic()
+```
+
+###Has it become worse the last years?
+What I have been hearing from friends in China is that the pollution has become worse year by year, it looks like that is also the case, there are more extreme cases in 2013 and 2014, and those are the ones that make headlines.
+```{r}
+library(ggplot2)
+ggplot(data = BeijingPM25_Winter, aes(y=pm2.5, x=year)) + 
+ geom_jitter(aes(colour = AirQuality)) + labs(title = "PM 2.5 observations by year", x="Month", y="PM 2.5",caption="(Scope: 2010-2014)")+theme_classic()+scale_color_brewer(palette="PuBu")
+```
+
+
+
+###What happened in January
+We can see that January 2011 was significantly better than any other January between 2010-2014. It could be worth digging deeper in that month to see what might have impact that.
+```{r}
+library(ggplot2)
+ggplot(data = BeijingPM25, aes(y=pm2.5, x=Month_Desc)) + 
+ geom_jitter(aes(colour = AirQuality)) + labs(title = "PM 2.5 and its relation to season", x="Month", y="PM 2.5",caption="(Scope: 2010-2014)")+ facet_grid(year~.)+theme_classic()+ scale_color_brewer(palette="PuBu")
+```
+
+Looking at the absolut number of hours, January still looks very strange.
+```{r}
+library(ggplot2)
+ggplot(data = BeijingPM25_YearMonth, aes(y=count.hours, x=YearMonth, fill=AirQuality)) + 
+ geom_col(position = "stack") +
+  scale_fill_brewer(palette="Blues",breaks=(levels(BeijingPM25_YearMonth$AirQuality))) +
+  theme_classic() +
+  labs(title = "Airquality over the last winters", x="Month", y="Number of hours",caption="(Scope: 2010-2014, Months: Nov, Dec, Jan, Feb)") +
+  theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
+```
+
+###Wind
+As the winter months are the ones that has the worst air quality, I will now focus on those months (Nov, Dec, Jan, Feb).
+Wind seem to have big impact on the air quality, the stronger wind the better air quality.
+
+```{r}
+library(ggplot2)
+ggplot(data = BeijingPM25_Winter, aes(y=pm2.5, x=Iws)) + 
+ geom_jitter(aes(colour = AirQuality)) + labs(title = "Wind speed and its impact on PM 2.5 in Winter", x="Wind speed", y="PM 2.5",caption="(Scope: 2010-2014, Nov, Dec, Jan, Feb)")+theme_classic()+ scale_color_brewer(palette="PuBu")
+```
+
+###Wind direction
+Dust storms from north west of Beijing is impacting the airquality according to https://en.wikipedia.org/wiki/Beijing#Climate. Based on this data we can see that when the wind is strong, in general it is increasing the air quality, except in the South East direction, which could potentially be dust comming from the desserts.
+
+```{r}
+library(ggplot2)
+ggplot(data = BeijingPM25_Winter, aes(y=Iws, x=cbwd)) + 
+ geom_jitter(aes(colour = AirQuality)) + labs(title = "Wind direction and its impact on PM 2.5 during Winter", y="Wind speed", x="Wind direction",caption="(Scope: 2010-2014, months: Nov, Dec, Jan, Feb)")+theme_classic()+ scale_color_brewer(palette="PuBu")
+```
+
+###Temperature
+The bad air quality is normally in the winter, but it doesnt seem to be that correlated to the temperature, all though all the extreme polluted hours are during colder weather .
+```{r}
+library(ggplot2)
+ggplot(data = BeijingPM25_Winter, aes(y=pm2.5, x=TEMP)) + 
+ geom_jitter(aes(colour = AirQuality)) + labs(title = "Temperature and its impact on PM 2.5 during Winter", x="Temperature", y="PM 2.5",caption="(Scope: 2010-2014, months: Nov, Dec, Jan, Feb)")+theme_classic()+ scale_color_brewer(palette="PuBu")
+```
+
+###Pressure
+It looks like pressure has some correlation to air pollution.
+```{r, message=FALSE, warning=FALSE}
+library(ggplot2)
+ggplot(data = BeijingPM25_Winter, aes(y=pm2.5, x=PRES)) + 
+ geom_jitter(aes(colour = AirQuality)) + labs(title = "Pressure and its impact on PM 2.5 in January", x="Pressure", y="PM 2.5",caption="(Scope: 2010-2014, months: Nov, Dec, Jan, Feb)")+theme_classic()+ scale_color_brewer(palette="PuBu")
+```
+
+###Dew point
+Dew point seem to be correlated to air pollution.
+```{r}
+library(ggplot2)
+ggplot(data = BeijingPM25_Winter, aes(y=pm2.5, x=DEWP)) + 
+ geom_jitter(aes(colour = AirQuality)) + labs(title = "Dew Point and its impact on PM 2.5 in the Winter", x="Dew Point", y="PM 2.5", caption="(Scope: 2010-2014, months: Nov, Dec, Jan, Feb)")+theme_classic()+ scale_color_brewer(palette="PuBu")
+```
+
+
+
+
